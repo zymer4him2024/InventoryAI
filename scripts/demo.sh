@@ -10,11 +10,11 @@ set -euo pipefail
 MODE="${1:-batch_count}"
 
 export APP_ID="$MODE"
-export DEVICE_ID="DEMO-001"
-export SIMULATE_CAMERA="true"
-export DISPLAY_HEADLESS="true"
-export FIREBASE_SIMULATE="true"
-export EVENTS_LOG_PATH="/tmp/inventoryai_events.jsonl"
+export DEVICE_ID="${DEVICE_ID:-DEMO-001}"
+export SIMULATE_CAMERA="${SIMULATE_CAMERA:-true}"
+export DISPLAY_HEADLESS="${DISPLAY_HEADLESS:-true}"
+export FIREBASE_SIMULATE="${FIREBASE_SIMULATE:-true}"
+export EVENTS_LOG_PATH="${EVENTS_LOG_PATH:-/tmp/inventoryai_events.jsonl}"
 
 # Point gateway at localhost agents
 export CAMERA_URL="http://localhost:8002"
@@ -22,8 +22,8 @@ export INFERENCE_URL="http://localhost:8001"
 export DISPLAY_URL="http://localhost:8003"
 export FIREBASE_SYNC_URL="http://localhost:8004"
 
-# Faster inference loop for demo
-export INFERENCE_INTERVAL_SEC="1.0"
+# Inference loop interval (default 1s for demo, override for real-time)
+export INFERENCE_INTERVAL_SEC="${INFERENCE_INTERVAL_SEC:-1.0}"
 
 PIDS=()
 
