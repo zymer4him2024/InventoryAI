@@ -158,7 +158,7 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
     h, w, _ = runner["input_shape"]
     orig_h, orig_w = frame.shape[:2]
     resized = cv2.resize(frame, (w, h))
-    input_data = np.expand_dims(resized, axis=0).astype(np.float32) / 255.0
+    input_data = np.expand_dims(resized, axis=0).astype(np.float32)
 
     with runner["network_group"].activate():
         with InferVStreams(runner["network_group"], runner["input_params"], runner["output_params"]) as vs:
