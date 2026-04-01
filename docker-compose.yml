@@ -92,6 +92,8 @@ services:
     networks:
       inventory_bridge:
         ipv4_address: 172.30.0.12
+    group_add:
+      - video
     devices:
       - /dev/video0:/dev/video0
     environment:
