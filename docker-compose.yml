@@ -69,7 +69,7 @@ services:
       - /sys/class/hailo_chardev:/sys/class/hailo_chardev:ro
       # Mount hailo-platform SDK from host (installed via apt on RPi5)
       - /usr/lib/python3/dist-packages/hailo_platform:/usr/local/lib/python3.11/site-packages/hailo_platform:ro
-      - /usr/lib/python3/dist-packages/hailort:/usr/local/lib/python3.11/site-packages/hailort:ro
+      - /usr/lib/python3/dist-packages/hailo.cpython-311-aarch64-linux-gnu.so:/usr/local/lib/python3.11/site-packages/hailo.cpython-311-aarch64-linux-gnu.so:ro
       # HailoRT native libraries
       - /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro
     healthcheck:
