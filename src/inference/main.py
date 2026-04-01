@@ -72,20 +72,28 @@ def _try_load_hailo() -> bool:
         logger.info("No HEF model at %r — simulation mode", HEF_PATH)
         return False
     try:
-        from hailo_platform import HEF, VDevice, ConfigureParams, FormatType  # noqa: F401
+        from hailo_platform import (  # noqa: F401
+            HEF, VDevice, ConfigureParams, HailoStreamInterface,
+            InputVStreamParams, OutputVStreamParams, FormatType,
+        )
         hef = HEF(HEF_PATH)
         vdevice = VDevice()
-        configure_params = ConfigureParams.create_from_hef(hef, interface=FormatType.HW_ONLY)
-        network_group = vdevice.configure(hef, configure_params)[0]
+        params = ConfigureParams.create_from_hef(hef, interface=HailoStreamInterface.PCIe)
+        network_group = vdevice.configure(hef, params)[0]
+        input_name = hef.get_input_vstream_infos()[0].name
+        input_shape = hef.get_input_vstream_infos()[0].shape  # (H, W, C)
+        inp = InputVStreamParams.make(network_group, format_type=FormatType.FLOAT32)
+        outp = OutputVStreamParams.make(network_group, format_type=FormatType.FLOAT32)
         _state.hailo_runner = {
-            "hef": hef,
             "vdevice": vdevice,
             "network_group": network_group,
-            "input_vstreams": network_group.input_vstreams,
-            "output_vstreams": network_group.output_vstreams,
+            "input_name": input_name,
+            "input_shape": input_shape,
+            "input_params": inp,
+            "output_params": outp,
         }
         _state.simulation = False
-        logger.info("Hailo-8 model loaded: %s", HEF_PATH)
+        logger.info("Hailo-8 model loaded: %s (input=%s)", HEF_PATH, input_shape)
         return True
     except (ImportError, OSError) as exc:
         logger.warning("Hailo init failed (%s) — simulation mode", exc)
@@ -112,7 +120,25 @@ def _mock_inference(image_bytes: bytes) -> InferenceResponse:
     return InferenceResponse(success=True, inference_ms=round(elapsed, 2), detections=detections)
 
 
+_COCO_LABELS = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
+    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+]
+
+
 def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
+    from hailo_platform import InferVStreams
+
     t0 = time.perf_counter()
     nparr = np.frombuffer(image_bytes, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -123,25 +149,38 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
     if runner is None:
         return InferenceResponse(success=False, inference_ms=0.0, detections=[])
 
-    input_vstream = runner["input_vstreams"][0]
-    h, w = input_vstream.shape[0], input_vstream.shape[1]
+    h, w, _ = runner["input_shape"]
+    orig_h, orig_w = frame.shape[:2]
     resized = cv2.resize(frame, (w, h))
     input_data = np.expand_dims(resized, axis=0).astype(np.float32) / 255.0
 
     with runner["network_group"].activate():
-        raw_output = runner["network_group"].run([input_data])
+        with InferVStreams(runner["network_group"], runner["input_params"], runner["output_params"]) as vs:
+            raw = vs.infer({runner["input_name"]: input_data})
 
+    # Output: {name: list[batch]} -> batch[0] = (80, N, 5) where 5 = [y_min, x_min, y_max, x_max, score]
     detections = []
-    for output in raw_output:
-        for det in output:
-            score = float(det[4]) if len(det) > 4 else 0.0
+    output_key = list(raw.keys())[0]
+    batch = raw[output_key][0]  # first batch item: list of 80 class arrays
+    for class_id, class_dets in enumerate(batch):
+        class_arr = np.array(class_dets)
+        if class_arr.size == 0:
+            continue
+        for det in class_arr:
+            score = float(det[4])
             if score < CONF_THRESHOLD:
                 continue
-            class_id = int(det[5]) if len(det) > 5 else 0
+            # Convert normalized coords to pixel coords
+            y_min, x_min, y_max, x_max = det[0], det[1], det[2], det[3]
+            px = float(x_min * orig_w)
+            py = float(y_min * orig_h)
+            pw = float((x_max - x_min) * orig_w)
+            ph = float((y_max - y_min) * orig_h)
+            label = _COCO_LABELS[class_id] if class_id < len(_COCO_LABELS) else str(class_id)
             detections.append(Detection(
-                label=str(class_id),
+                label=label,
                 score=round(score, 3),
-                box=[float(det[0]), float(det[1]), float(det[2] - det[0]), float(det[3] - det[1])],
+                box=[px, py, pw, ph],
             ))
 
     elapsed = (time.perf_counter() - t0) * 1000
