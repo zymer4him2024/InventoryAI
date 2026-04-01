@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
+
+
+class DetectionBox(BaseModel):
+    label: str = ""
+    score: float = 0.0
+    box: List[float] = []  # [x, y, w, h]
 
 
 class HUDResponse(BaseModel):
@@ -20,6 +26,8 @@ class HealthResponse(BaseModel):
 class HUDUpdate(BaseModel):
     app_id: str = ""
     state: str = ""
+    frame_b64: Optional[str] = None  # Base64-encoded JPEG camera frame
+    detections: Optional[List[DetectionBox]] = None  # Bounding boxes to overlay
     # batch_count fields
     live_count: Optional[int] = None
     target_count: Optional[int] = None

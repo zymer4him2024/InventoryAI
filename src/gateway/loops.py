@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 
@@ -56,9 +57,11 @@ async def inference_loop() -> None:
             async with gw.mode_lock:
                 await gw.mode.on_inference_result(detections)
 
-            # Update display
+            # Update display with frame + detections
             async with gw.mode_lock:
                 display_state = await gw.mode.get_display_state()
+            display_state["frame_b64"] = base64.b64encode(frame_bytes).decode("ascii")
+            display_state["detections"] = detections
             try:
                 await gw.client().post(
                     f"{config.DISPLAY_URL}/hud",

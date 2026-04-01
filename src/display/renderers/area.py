@@ -1,6 +1,8 @@
-"""Renderer for area_monitor mode — large count, delta, timestamp."""
+"""Renderer for area_monitor mode — camera feed + count overlay."""
 
 from __future__ import annotations
+
+import base64
 
 import cv2
 import numpy as np
@@ -16,7 +18,28 @@ C_GRAY = (120, 120, 120)
 
 def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
     h, w = canvas.shape[:2]
-    canvas[:] = C_BG
+
+    # Decode camera frame as background
+    if hud.frame_b64:
+        raw = base64.b64decode(hud.frame_b64)
+        nparr = np.frombuffer(raw, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is not None:
+            canvas = cv2.resize(frame, (w, h))
+        else:
+            canvas[:] = C_BG
+    else:
+        canvas[:] = C_BG
+
+    # Draw detection bounding boxes
+    if hud.detections:
+        for det in hud.detections:
+            if len(det.box) == 4:
+                x, y_pos, bw, bh = [int(v) for v in det.box]
+                cv2.rectangle(canvas, (x, y_pos), (x + bw, y_pos + bh), C_GREEN, 2)
+                label = f"{det.label} {det.score:.2f}"
+                cv2.putText(canvas, label, (x, y_pos - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_GREEN, 2)
 
     total = hud.total_count if hud.total_count is not None else 0
     delta = hud.delta if hud.delta is not None else 0
@@ -27,33 +50,38 @@ def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
     color = C_RED if alert else C_GREEN
     state_text = "ALERT" if alert else "MONITORING"
 
-    # Border
-    cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), color, 12)
+    # Semi-transparent top bar
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 120), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, canvas, 0.4, 0, canvas)
 
-    # State + location top
-    cv2.putText(canvas, state_text, (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 2.0, color, 4)
+    cv2.putText(canvas, state_text, (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
     if location:
-        cv2.putText(canvas, location, (40, 130), cv2.FONT_HERSHEY_SIMPLEX, 1.0, C_GRAY, 2)
+        cv2.putText(canvas, location, (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, C_GRAY, 2)
 
-    # Large count center
+    # Count display (top right)
     count_text = str(total)
-    text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 8.0, 10)[0]
-    cx = (w - text_size[0]) // 2
-    cy = (h + text_size[1]) // 2 - 30
-    cv2.putText(canvas, count_text, (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 8.0, color, 10)
+    ts = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 2.0, 4)[0]
+    cv2.putText(canvas, count_text, (w - ts[0] - 30, 70),
+                cv2.FONT_HERSHEY_SIMPLEX, 2.0, color, 4)
 
-    # Delta below count
+    # Delta
     if delta != 0:
         sign = "+" if delta > 0 else ""
         delta_text = f"{sign}{delta}"
         delta_color = C_GREEN if delta > 0 else C_RED
-        ds = cv2.getTextSize(delta_text, cv2.FONT_HERSHEY_SIMPLEX, 2.0, 4)[0]
-        cv2.putText(canvas, delta_text, ((w - ds[0]) // 2, cy + 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 2.0, delta_color, 4)
+        cv2.putText(canvas, delta_text, (w - 150, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, delta_color, 2)
 
     # Timestamp bottom
     if last_updated:
-        cv2.putText(canvas, f"Updated: {last_updated}", (40, h - 40),
+        overlay2 = canvas.copy()
+        cv2.rectangle(overlay2, (0, h - 50), (w, h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay2, 0.6, canvas, 0.4, 0, canvas)
+        cv2.putText(canvas, f"Updated: {last_updated}", (20, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, C_GRAY, 2)
+
+    # Border
+    cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), color, 4)
 
     return canvas

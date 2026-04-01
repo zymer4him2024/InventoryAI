@@ -1,23 +1,46 @@
-"""Renderer for batch_count mode — count display + target + PASS/FAIL banner."""
+"""Renderer for batch_count mode — camera feed + detection boxes + count overlay."""
 
 from __future__ import annotations
+
+import base64
 
 import cv2
 import numpy as np
 
 from src.display.schemas import HUDUpdate
 
-C_BG = (30, 30, 30)
 C_WHITE = (255, 255, 255)
 C_GREEN = (0, 200, 0)
 C_RED = (0, 0, 220)
 C_YELLOW = (0, 220, 220)
 C_GRAY = (120, 120, 120)
+C_BG = (30, 30, 30)
 
 
 def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
     h, w = canvas.shape[:2]
-    canvas[:] = C_BG
+
+    # Decode camera frame as background
+    if hud.frame_b64:
+        raw = base64.b64decode(hud.frame_b64)
+        nparr = np.frombuffer(raw, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is not None:
+            canvas = cv2.resize(frame, (w, h))
+        else:
+            canvas[:] = C_BG
+    else:
+        canvas[:] = C_BG
+
+    # Draw detection bounding boxes
+    if hud.detections:
+        for det in hud.detections:
+            if len(det.box) == 4:
+                x, y, bw, bh = [int(v) for v in det.box]
+                cv2.rectangle(canvas, (x, y), (x + bw, y + bh), C_GREEN, 2)
+                label = f"{det.label} {det.score:.2f}"
+                cv2.putText(canvas, label, (x, y - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, C_GREEN, 2)
 
     state = hud.state or "IDLE"
     sku = hud.sku or ""
@@ -25,7 +48,7 @@ def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
     target = hud.target_count if hud.target_count is not None else 0
     result = hud.result
 
-    # State banner
+    # State banner color
     if state == "IDLE":
         color = C_YELLOW
         text = "IDLE — Scan QR"
@@ -42,27 +65,25 @@ def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
         color = C_GRAY
         text = state
 
-    # Border
-    cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), color, 12)
+    # Semi-transparent top bar
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 120), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, canvas, 0.4, 0, canvas)
 
-    # State text top
-    cv2.putText(canvas, text, (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 2.0, color, 4)
+    # State text
+    cv2.putText(canvas, text, (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
 
     # SKU
     if sku:
-        cv2.putText(canvas, f"SKU: {sku}", (40, 140), cv2.FONT_HERSHEY_SIMPLEX, 1.0, C_GRAY, 2)
+        cv2.putText(canvas, f"SKU: {sku}", (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, C_GRAY, 2)
 
-    # Large count center
-    count_text = str(live)
-    text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 6.0, 8)[0]
-    cx = (w - text_size[0]) // 2
-    cy = (h + text_size[1]) // 2
-    cv2.putText(canvas, count_text, (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 6.0, C_WHITE, 8)
+    # Count display (top right)
+    count_text = f"{live}/{target}"
+    ts = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)[0]
+    cv2.putText(canvas, count_text, (w - ts[0] - 30, 55),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.5, C_WHITE, 3)
 
-    # Target below count
-    target_text = f"Target: {target}"
-    ts = cv2.getTextSize(target_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)[0]
-    cv2.putText(canvas, target_text, ((w - ts[0]) // 2, cy + 80),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.5, C_GRAY, 3)
+    # Border
+    cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), color, 4)
 
     return canvas
