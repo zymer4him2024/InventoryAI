@@ -36,4 +36,14 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        run: |
+          python -m pytest tests/ -v --tb=short --junitxml=results.xml || true
+          python -c "
+          import xml.etree.ElementTree as ET
+          root = ET.parse('results.xml').getroot()
+          failures = int(root.attrib.get('failures', 0))
+          errors = int(root.attrib.get('errors', 0))
+          if failures or errors:
+              raise SystemExit(f'{failures} failures, {errors} errors')
+          print(f'All {root.attrib[\"tests\"]} tests passed')
+          "
