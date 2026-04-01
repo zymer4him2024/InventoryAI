@@ -155,10 +155,23 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
     if runner is None:
         return InferenceResponse(success=False, inference_ms=0.0, detections=[])
 
-    h, w, _ = runner["input_shape"]
+    model_h, model_w, _ = runner["input_shape"]
     orig_h, orig_w = frame.shape[:2]
-    resized = cv2.resize(frame, (w, h))
-    input_data = np.expand_dims(resized, axis=0).astype(np.float32)
+
+    # BGR -> RGB (YOLOv8 trained on RGB)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Letterbox resize: maintain aspect ratio, pad with gray
+    scale = min(model_w / orig_w, model_h / orig_h)
+    new_w = int(orig_w * scale)
+    new_h = int(orig_h * scale)
+    pad_x = (model_w - new_w) // 2
+    pad_y = (model_h - new_h) // 2
+    resized = cv2.resize(rgb, (new_w, new_h))
+    letterbox = np.full((model_h, model_w, 3), 114, dtype=np.uint8)
+    letterbox[pad_y:pad_y + new_h, pad_x:pad_x + new_w] = resized
+
+    input_data = np.expand_dims(letterbox, axis=0).astype(np.float32)
 
     with runner["network_group"].activate():
         with InferVStreams(runner["network_group"], runner["input_params"], runner["output_params"]) as vs:
@@ -176,12 +189,13 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
             score = float(det[4])
             if score < CONF_THRESHOLD:
                 continue
-            # Convert normalized coords to pixel coords
+            # Convert normalized coords back to original image coords (undo letterbox)
             y_min, x_min, y_max, x_max = det[0], det[1], det[2], det[3]
-            px = float(x_min * orig_w)
-            py = float(y_min * orig_h)
-            pw = float((x_max - x_min) * orig_w)
-            ph = float((y_max - y_min) * orig_h)
+            # Scale from model coords to letterbox coords, then remove padding
+            px = float((x_min * model_w - pad_x) / scale)
+            py = float((y_min * model_h - pad_y) / scale)
+            pw = float((x_max - x_min) * model_w / scale)
+            ph = float((y_max - y_min) * model_h / scale)
             label = _COCO_LABELS[class_id] if class_id < len(_COCO_LABELS) else str(class_id)
             detections.append(Detection(
                 label=label,
