@@ -71,6 +71,7 @@ services:
       - /usr/lib/python3/dist-packages/hailo_platform:/usr/local/lib/python3.11/site-packages/hailo_platform:ro
       - /usr/lib/python3/dist-packages/hailo.cpython-311-aarch64-linux-gnu.so:/usr/local/lib/python3.11/site-packages/hailo.cpython-311-aarch64-linux-gnu.so:ro
       # HailoRT native libraries
+      - /usr/lib/libhailort.so.4.20.0:/usr/lib/libhailort.so.4.20.0:ro
       - /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
