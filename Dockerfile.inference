@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appgroup --gid=1001 \
+    && useradd -r -g appgroup --uid=1001 --home-dir=/app --shell=/sbin/nologin appuser
+
+WORKDIR /app
+COPY requirements.inference.txt .
+RUN pip install --no-cache-dir -r requirements.inference.txt
+
+COPY src/ /app/src/
+
+RUN mkdir -p /app/models && chown -R appuser:appgroup /app
+USER appuser
+
+EXPOSE 8001

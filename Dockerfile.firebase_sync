@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appgroup --gid=1001 \
+    && useradd -r -g appgroup --uid=1001 --home-dir=/app --shell=/sbin/nologin appuser
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ /app/src/
+
+RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+USER appuser
+
+EXPOSE 8004

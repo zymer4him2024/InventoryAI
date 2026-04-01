@@ -1,0 +1,174 @@
+services:
+  gateway_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway_agent
+    user: "1001:1001"
+    restart: unless-stopped
+    command: python -m src.gateway.main
+    ports:
+      - "8000:8000"
+    networks:
+      inventory_bridge:
+        ipv4_address: 172.30.0.10
+    env_file:
+      - .env
+    environment:
+      - APP_ID=${APP_ID}
+      - DEVICE_ID=${DEVICE_ID}
+      - CAMERA_URL=http://camera_agent:8002
+      - INFERENCE_URL=http://inference_agent:8001
+      - DISPLAY_URL=http://display_agent:8003
+      - FIREBASE_SYNC_URL=http://firebase_sync_agent:8004
+    volumes:
+      - ./src:/app/src:ro
+    depends_on:
+      camera_agent:
+        condition: service_healthy
+      inference_agent:
+        condition: service_healthy
+    mem_limit: "512m"
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  inference_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+    container_name: inference_agent
+    user: "1001:1001"
+    restart: unless-stopped
+    command: python -m src.inference.main
+    expose:
+      - "8001"
+    networks:
+      inventory_bridge:
+        ipv4_address: 172.30.0.11
+    # SYS_ADMIN required by HailoRT SDK for PCIe DMA buffer management.
+    # Tested cap_drop: ALL with individual caps — only SYS_ADMIN is needed.
+    cap_add:
+      - SYS_ADMIN
+    cap_drop:
+      - ALL
+    devices:
+      - /dev/hailo0:/dev/hailo0
+    shm_size: "512mb"
+    mem_limit: "2g"
+    cpus: "2.0"
+    environment:
+      - HEF_PATH=/app/models/inventory.hef
+      - CONF_THRESHOLD=0.35
+    volumes:
+      - ./src:/app/src:ro
+      - ./models:/app/models:ro
+      - /sys/class/hailo_chardev:/sys/class/hailo_chardev:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  camera_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: camera_agent
+    user: "1001:1001"
+    restart: unless-stopped
+    command: python -m src.camera.main
+    expose:
+      - "8002"
+    networks:
+      inventory_bridge:
+        ipv4_address: 172.30.0.12
+    devices:
+      - /dev/video0:/dev/video0
+    environment:
+      - CAMERA_INDEX=0
+      - CAMERA_WIDTH=1920
+      - CAMERA_HEIGHT=1080
+    mem_limit: "512m"
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/frame", "-o", "/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  display_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.display
+    container_name: display_agent
+    user: "1001:1001"
+    restart: unless-stopped
+    command: python -m src.display.main
+    expose:
+      - "8003"
+    networks:
+      inventory_bridge:
+        ipv4_address: 172.30.0.13
+    ipc: host
+    environment:
+      - APP_ID=${APP_ID}
+      - DISPLAY=:0
+      - XAUTHORITY=/app/.Xauthority
+      - DISPLAY_WIDTH=1920
+      - DISPLAY_HEIGHT=1080
+      - DISPLAY_HEADLESS=false
+    volumes:
+      - ./src:/app/src:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/app/.Xauthority:ro
+    devices:
+      - /dev/dri:/dev/dri
+    mem_limit: "512m"
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  firebase_sync_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.firebase_sync
+    container_name: firebase_sync_agent
+    user: "1001:1001"
+    restart: unless-stopped
+    command: python -m src.firebase_sync.main
+    expose:
+      - "8004"
+    networks:
+      inventory_bridge:
+        ipv4_address: 172.30.0.14
+    env_file:
+      - .env
+    environment:
+      - APP_ID=${APP_ID}
+      - DEVICE_ID=${DEVICE_ID}
+    volumes:
+      - ./data:/app/data:rw
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+    mem_limit: "256m"
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  inventory_bridge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

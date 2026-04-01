@@ -1,0 +1,16 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.DS_Store
+Thumbs.db
+models/*.hef
+data/
+firebase-credentials.json
+*.pem
+*.key
