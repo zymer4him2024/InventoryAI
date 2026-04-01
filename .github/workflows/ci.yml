@@ -22,7 +22,6 @@ jobs:
     needs: lint
     env:
       APP_ID: batch_count
-      DEVICE_ID: CI-001
       SIMULATE_CAMERA: "true"
       DISPLAY_HEADLESS: "true"
       FIREBASE_SIMULATE: "true"
