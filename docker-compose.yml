@@ -124,6 +124,9 @@ services:
       inventory_bridge:
         ipv4_address: 172.30.0.13
     ipc: host
+    group_add:
+      - video
+      - render
     environment:
       - APP_ID=${APP_ID}
       - DISPLAY=:0
