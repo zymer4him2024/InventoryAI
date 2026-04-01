@@ -95,9 +95,15 @@ def _try_load_hailo() -> bool:
         _state.simulation = False
         logger.info("Hailo-8 model loaded: %s (input=%s)", HEF_PATH, input_shape)
         return True
-    except (ImportError, OSError) as exc:
+    except (ImportError, OSError, RuntimeError) as exc:
         logger.warning("Hailo init failed (%s) — simulation mode", exc)
         return False
+    except BaseException as exc:
+        # HailoRTException (e.g. OUT_OF_PHYSICAL_DEVICES) inherits BaseException
+        if "hailo" in type(exc).__module__.lower():
+            logger.warning("Hailo device error (%s) — simulation mode", exc)
+            return False
+        raise
 
 
 def _mock_inference(image_bytes: bytes) -> InferenceResponse:
