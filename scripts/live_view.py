@@ -30,7 +30,7 @@ GREEN = (0, 220, 0)
 YELLOW = (0, 220, 220)
 WHITE = (255, 255, 255)
 
-cap = cv2.VideoCapture(CAMERA_INDEX)
+cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
