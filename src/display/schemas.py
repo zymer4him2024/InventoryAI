@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -20,15 +21,15 @@ class HUDUpdate(BaseModel):
     app_id: str = ""
     state: str = ""
     # batch_count fields
-    live_count: int | None = None
-    target_count: int | None = None
-    sku: str | None = None
-    result: str | None = None  # PASS | FAIL
+    live_count: Optional[int] = None
+    target_count: Optional[int] = None
+    sku: Optional[str] = None
+    result: Optional[str] = None  # PASS | FAIL
     # bundle_check fields
-    checklist: dict[str, bool] | None = None  # class_name → detected
+    checklist: Optional[Dict[str, bool]] = None  # class_name → detected
     # area_monitor fields
-    total_count: int | None = None
-    delta: int | None = None
-    alert: bool | None = None
-    location: str | None = None
-    last_updated: str | None = None
+    total_count: Optional[int] = None
+    delta: Optional[int] = None
+    alert: Optional[bool] = None
+    location: Optional[str] = None
+    last_updated: Optional[str] = None
