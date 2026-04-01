@@ -7,6 +7,8 @@ import os
 import sys
 import threading
 import time
+from dataclasses import dataclass, field
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -40,6 +42,20 @@ def _validate_config() -> None:
 
 _validate_config()
 
+
+@dataclass
+class CameraState:
+    """Holds camera capture state. All fields guarded by lock."""
+
+    latest_frame: Optional[bytes] = None
+    camera_ok: bool = False
+    # Invariant: lock guards latest_frame and camera_ok.
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+_state = CameraState()
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
     t = threading.Thread(target=_capture_loop, daemon=True, name="camera-capture")
@@ -50,17 +66,12 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="InventoryAI Camera Agent", lifespan=_lifespan)
 
-# Invariant: _frame_lock guards _latest_frame. Always acquire before reading or writing _latest_frame.
-_frame_lock = threading.Lock()
-_latest_frame: bytes | None = None
-_camera_ok = False
-
 
 def _capture_loop() -> None:
-    global _latest_frame, _camera_ok
     if SIMULATE_CAMERA:
         logger.info("Simulation mode — generating test frames")
-        _camera_ok = True
+        with _state.lock:
+            _state.camera_ok = True
         while True:
             img = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=np.uint8)
             img[:] = (40, 40, 40)
@@ -70,8 +81,8 @@ def _capture_loop() -> None:
             cv2.putText(img, ts, (CAMERA_WIDTH // 2 - 80, CAMERA_HEIGHT // 2 + 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2)
             _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            with _frame_lock:
-                _latest_frame = buf.tobytes()
+            with _state.lock:
+                _state.latest_frame = buf.tobytes()
             time.sleep(1.0 / 10)
         return
 
@@ -82,26 +93,29 @@ def _capture_loop() -> None:
         logger.error("Cannot open camera %d", CAMERA_INDEX)
         return
 
-    _camera_ok = True
+    with _state.lock:
+        _state.camera_ok = True
     logger.info("Camera %d opened (%dx%d)", CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT)
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            _camera_ok = False
+            with _state.lock:
+                _state.camera_ok = False
             time.sleep(0.5)
             continue
-        _camera_ok = True
+        with _state.lock:
+            _state.camera_ok = True
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        with _frame_lock:
-            _latest_frame = buf.tobytes()
+        with _state.lock:
+            _state.latest_frame = buf.tobytes()
 
 
 
 @app.get("/frame")
 async def get_frame() -> Response:
-    with _frame_lock:
-        frame = _latest_frame
+    with _state.lock:
+        frame = _state.latest_frame
     if frame is None:
         return JSONResponse({"error": "No frame available"}, status_code=503)
     return Response(content=frame, media_type="image/jpeg")
@@ -109,7 +123,9 @@ async def get_frame() -> Response:
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", camera_ok=_camera_ok, simulate=SIMULATE_CAMERA)
+    with _state.lock:
+        camera_ok = _state.camera_ok
+    return HealthResponse(status="ok", camera_ok=camera_ok, simulate=SIMULATE_CAMERA)
 
 
 if __name__ == "__main__":

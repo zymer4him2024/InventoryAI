@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Type
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -23,17 +25,31 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 
 config.validate()
 
-_MODE_MAP: dict[str, type[BaseMode]] = {
+_MODE_MAP: Dict[str, Type[BaseMode]] = {
     "batch_count": BatchCountMode,
     "bundle_check": BundleCheckMode,
     "area_monitor": AreaMonitorMode,
 }
 
-_mode: BaseMode = _MODE_MAP[config.APP_ID]()
 
-# Invariant: _mode_lock guards all _mode method calls. Acquire before calling
-# on_inference_result, get_display_state, handle_qr, or get_state.
-_mode_lock = asyncio.Lock()
+@dataclass
+class GatewayState:
+    """Holds gateway runtime state: active mode and shared HTTP client."""
+
+    mode: BaseMode = field(default_factory=lambda: _MODE_MAP[config.APP_ID]())
+    http_client: Optional[httpx.AsyncClient] = None
+    # Invariant: mode_lock guards all mode method calls (on_inference_result,
+    # get_display_state, handle_qr, get_state).
+    mode_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def client(self) -> httpx.AsyncClient:
+        if self.http_client is None or self.http_client.is_closed:
+            self.http_client = httpx.AsyncClient()
+        return self.http_client
+
+
+_gw = GatewayState()
+
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -41,20 +57,11 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
     asyncio.create_task(_qr_scan_loop())
     logger.info("Gateway started — APP_ID=%s DEVICE_ID=%s", config.APP_ID, config.DEVICE_ID)
     yield
-    if _http_client and not _http_client.is_closed:
-        await _http_client.aclose()
+    if _gw.http_client and not _gw.http_client.is_closed:
+        await _gw.http_client.aclose()
 
 
 app = FastAPI(title=f"InventoryAI Gateway ({config.APP_ID})", lifespan=_lifespan)
-
-_http_client: httpx.AsyncClient | None = None
-
-
-def client() -> httpx.AsyncClient:
-    global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient()
-    return _http_client
 
 
 async def _inference_loop() -> None:
@@ -66,7 +73,7 @@ async def _inference_loop() -> None:
 
             # Fetch frame from camera
             try:
-                frame_resp = await client().get(
+                frame_resp = await _gw.client().get(
                     f"{config.CAMERA_URL}/frame",
                     timeout=config.HEALTH_TIMEOUT,
                 )
@@ -80,7 +87,7 @@ async def _inference_loop() -> None:
 
             # Send to inference
             try:
-                inf_resp = await client().post(
+                inf_resp = await _gw.client().post(
                     f"{config.INFERENCE_URL}/inference",
                     files={"image": ("frame.jpg", frame_bytes, "image/jpeg")},
                     timeout=10.0,
@@ -96,14 +103,14 @@ async def _inference_loop() -> None:
             detections = inf_data.get("detections", [])
 
             # Process through mode
-            async with _mode_lock:
-                await _mode.on_inference_result(detections)
+            async with _gw.mode_lock:
+                await _gw.mode.on_inference_result(detections)
 
             # Update display
-            async with _mode_lock:
-                display_state = await _mode.get_display_state()
+            async with _gw.mode_lock:
+                display_state = await _gw.mode.get_display_state()
             try:
-                await client().post(
+                await _gw.client().post(
                     f"{config.DISPLAY_URL}/hud",
                     json=display_state,
                     timeout=config.HEALTH_TIMEOUT,
@@ -139,7 +146,7 @@ async def _qr_scan_loop() -> None:
         try:
             await asyncio.sleep(config.QR_SCAN_INTERVAL_SEC)
 
-            resp = await client().get(f"{config.CAMERA_URL}/frame", timeout=config.HEALTH_TIMEOUT)
+            resp = await _gw.client().get(f"{config.CAMERA_URL}/frame", timeout=config.HEALTH_TIMEOUT)
             if resp.status_code != 200:
                 continue
 
@@ -162,8 +169,8 @@ async def _qr_scan_loop() -> None:
             last_qr = qr_text
             last_qr_time = now
             logger.info("QR scanned: %s", qr_text)
-            async with _mode_lock:
-                await _mode.handle_qr(qr_text)
+            async with _gw.mode_lock:
+                await _gw.mode.handle_qr(qr_text)
 
         except (httpx.RequestError, ValueError) as exc:
             logger.error("QR scan error: %s", exc)
@@ -173,17 +180,17 @@ async def _qr_scan_loop() -> None:
 
 @app.post("/job", response_model=JobResponse)
 async def create_job(req: JobRequest) -> JobResponse:
-    async with _mode_lock:
-        await _mode.handle_qr(req.sku)
-        state = _mode.get_state()
+    async with _gw.mode_lock:
+        await _gw.mode.handle_qr(req.sku)
+        state = _gw.mode.get_state()
     return JobResponse(status="ok", sku=req.sku, state=state)
 
 
 @app.get("/status", response_model=StatusResponse)
 async def status() -> StatusResponse:
-    async with _mode_lock:
-        display_state = await _mode.get_display_state()
-        state = _mode.get_state()
+    async with _gw.mode_lock:
+        display_state = await _gw.mode.get_display_state()
+        state = _gw.mode.get_state()
     return StatusResponse(
         app_id=config.APP_ID,
         device_id=config.DEVICE_ID,

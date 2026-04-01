@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Optional, Union
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,22 +30,30 @@ try:
 except ImportError:
     GoogleCloudError = OSError  # type: ignore[misc,assignment]
 
+
+@dataclass
+class FirebaseState:
+    """Holds Firestore client and simulation flag. Set once at startup, read-only thereafter."""
+
+    db: Optional[Any] = None
+    simulation: bool = True
+
+
+_state = FirebaseState()
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
     _init_firebase()
     EVENTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("Firebase Sync Agent started (simulation=%s)", _simulation)
+    logger.info("Firebase Sync Agent started (simulation=%s)", _state.simulation)
     yield
 
 
 app = FastAPI(title="InventoryAI Firebase Sync Agent", lifespan=_lifespan)
 
-_db = None
-_simulation = True
-
 
 def _init_firebase() -> bool:
-    global _db, _simulation
     if FIREBASE_SIMULATE:
         logger.info("Firebase simulation mode (FIREBASE_SIMULATE=true)")
         return False
@@ -59,8 +69,8 @@ def _init_firebase() -> bool:
         if not firebase_admin._apps:
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred, {"projectId": FIREBASE_PROJECT_ID})
-        _db = firestore.client()
-        _simulation = False
+        _state.db = firestore.client()
+        _state.simulation = False
         logger.info("Firebase initialized (project=%s)", FIREBASE_PROJECT_ID)
         return True
     except (ImportError, ValueError, FileNotFoundError) as exc:
@@ -70,17 +80,17 @@ def _init_firebase() -> bool:
 
 
 @app.post("/write", response_model=WriteResponse)
-async def write_event(req: WriteRequest) -> WriteResponse | JSONResponse:
+async def write_event(req: WriteRequest) -> Union[WriteResponse, JSONResponse]:
     data = {**req.data, "written_at": datetime.now(timezone.utc).isoformat()}
 
-    if _simulation:
+    if _state.simulation:
         with open(EVENTS_LOG_PATH, "a") as f:
             f.write(json.dumps({"collection": req.collection, **data}) + "\n")
         logger.info("[SIM] Wrote to %s: %s", req.collection, json.dumps(data)[:200])
         return WriteResponse(status="simulated", collection=req.collection)
 
     try:
-        _db.collection(req.collection).add(data)
+        _state.db.collection(req.collection).add(data)
         logger.info("Wrote to Firestore %s", req.collection)
         return WriteResponse(status="ok", collection=req.collection)
     except GoogleCloudError as exc:
@@ -90,7 +100,7 @@ async def write_event(req: WriteRequest) -> WriteResponse | JSONResponse:
 
 @app.post("/load_sku")
 async def load_sku(sku: str = Query(..., min_length=1)) -> JSONResponse:
-    if _simulation:
+    if _state.simulation:
         mock = SKUConfig(
             sku=sku,
             part_class="bolt_m6",
@@ -103,7 +113,7 @@ async def load_sku(sku: str = Query(..., min_length=1)) -> JSONResponse:
         return JSONResponse(mock.model_dump())
 
     try:
-        doc = _db.collection("inventory_skus").document(sku).get()
+        doc = _state.db.collection("inventory_skus").document(sku).get()
         if not doc.exists:
             return JSONResponse({"error": f"SKU {sku} not found"}, status_code=404)
         sku_config = SKUConfig(**doc.to_dict())
@@ -115,7 +125,7 @@ async def load_sku(sku: str = Query(..., min_length=1)) -> JSONResponse:
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", simulation=_simulation)
+    return HealthResponse(status="ok", simulation=_state.simulation)
 
 
 if __name__ == "__main__":

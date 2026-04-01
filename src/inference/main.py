@@ -7,6 +7,8 @@ import os
 import random
 import sys
 import time
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
@@ -43,13 +45,22 @@ def _validate_config() -> None:
 
 _validate_config()
 
-_simulation_mode = True
-_hailo_runner = None
+
+@dataclass
+class InferenceState:
+    """Holds Hailo runtime state. Set once at startup, read-only thereafter."""
+
+    simulation: bool = True
+    hailo_runner: Optional[Dict[str, Any]] = None
+
+
+_state = InferenceState()
+
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
     _try_load_hailo()
-    logger.info("Inference agent started (simulation=%s, labels=%s)", _simulation_mode, MOCK_LABELS)
+    logger.info("Inference agent started (simulation=%s, labels=%s)", _state.simulation, MOCK_LABELS)
     yield
 
 
@@ -57,7 +68,6 @@ app = FastAPI(title="InventoryAI Inference Agent", lifespan=_lifespan)
 
 
 def _try_load_hailo() -> bool:
-    global _hailo_runner, _simulation_mode
     if not HEF_PATH or not os.path.isfile(HEF_PATH):
         logger.info("No HEF model at %r — simulation mode", HEF_PATH)
         return False
@@ -67,14 +77,14 @@ def _try_load_hailo() -> bool:
         vdevice = VDevice()
         configure_params = ConfigureParams.create_from_hef(hef, interface=FormatType.HW_ONLY)
         network_group = vdevice.configure(hef, configure_params)[0]
-        _hailo_runner = {
+        _state.hailo_runner = {
             "hef": hef,
             "vdevice": vdevice,
             "network_group": network_group,
             "input_vstreams": network_group.input_vstreams,
             "output_vstreams": network_group.output_vstreams,
         }
-        _simulation_mode = False
+        _state.simulation = False
         logger.info("Hailo-8 model loaded: %s", HEF_PATH)
         return True
     except (ImportError, OSError) as exc:
@@ -84,18 +94,18 @@ def _try_load_hailo() -> bool:
 
 def _mock_inference(image_bytes: bytes) -> InferenceResponse:
     t0 = time.perf_counter()
-    time.sleep(random.uniform(0.02, 0.06))
+    time.sleep(random.uniform(0.02, 0.06))  # noqa: S311
     detections = []
     for label in MOCK_LABELS:
-        count = random.randint(MOCK_MIN_COUNT, MOCK_MAX_COUNT)
+        count = random.randint(MOCK_MIN_COUNT, MOCK_MAX_COUNT)  # noqa: S311
         for _ in range(count):
-            x = random.randint(50, 1600)
-            y = random.randint(50, 900)
-            w = random.randint(30, 120)
-            h = random.randint(30, 120)
+            x = random.randint(50, 1600)  # noqa: S311
+            y = random.randint(50, 900)  # noqa: S311
+            w = random.randint(30, 120)  # noqa: S311
+            h = random.randint(30, 120)  # noqa: S311
             detections.append(Detection(
                 label=label,
-                score=round(random.uniform(0.5, 0.99), 2),
+                score=round(random.uniform(0.5, 0.99), 2),  # noqa: S311
                 box=[float(x), float(y), float(w), float(h)],
             ))
     elapsed = (time.perf_counter() - t0) * 1000
@@ -109,7 +119,7 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
     if frame is None:
         return InferenceResponse(success=False, inference_ms=0.0, detections=[])
 
-    runner = _hailo_runner
+    runner = _state.hailo_runner
     if runner is None:
         return InferenceResponse(success=False, inference_ms=0.0, detections=[])
 
@@ -140,16 +150,16 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
 
 
 @app.post("/inference", response_model=InferenceResponse)
-async def inference(image: UploadFile = File(...)) -> InferenceResponse:
+async def inference(image: UploadFile = File(...)) -> InferenceResponse:  # noqa: B008
     image_bytes = await image.read()
-    if _simulation_mode:
+    if _state.simulation:
         return _mock_inference(image_bytes)
     return _hailo_inference(image_bytes)
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", simulation=_simulation_mode, model=HEF_PATH or "mock")
+    return HealthResponse(status="ok", simulation=_state.simulation, model=HEF_PATH or "mock")
 
 
 if __name__ == "__main__":

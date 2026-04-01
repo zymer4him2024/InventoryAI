@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import Response, JSONResponse
 
-from src.display.buffer import DisplayState
+from src.display.buffer import DisplayState, SnapshotBuffer
 from src.display.schemas import HUDUpdate, HUDResponse, HealthResponse
 from src.display.renderers import batch, bundle, area
 
@@ -58,10 +58,7 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="InventoryAI Display Agent", lifespan=_lifespan)
 _state = DisplayState()
-
-# Invariant: _snapshot_lock guards _latest_snapshot. Always acquire before reading or writing.
-_snapshot_lock = threading.Lock()
-_latest_snapshot: bytes | None = None
+_snapshot = SnapshotBuffer()
 
 _RENDERERS = {
     "batch_count": batch.render,
@@ -71,7 +68,6 @@ _RENDERERS = {
 
 
 def _render_loop() -> None:
-    global _latest_snapshot
     canvas = np.zeros((DISPLAY_HEIGHT, DISPLAY_WIDTH, 3), dtype=np.uint8)
     renderer = _RENDERERS.get(APP_ID, batch.render)
     interval = 1.0 / DISPLAY_FPS
@@ -89,8 +85,7 @@ def _render_loop() -> None:
             canvas = renderer(canvas, hud)
 
             _, buf = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            with _snapshot_lock:
-                _latest_snapshot = buf.tobytes()
+            _snapshot.store(buf.tobytes())
 
             if not DISPLAY_HEADLESS:
                 cv2.imshow("InventoryAI", canvas)
@@ -113,8 +108,7 @@ async def update_hud(body: HUDUpdate) -> HUDResponse:
 
 @app.get("/snapshot")
 async def snapshot() -> Response:
-    with _snapshot_lock:
-        data = _latest_snapshot
+    data = _snapshot.read()
     if data is None:
         return JSONResponse({"error": "No snapshot"}, status_code=503)
     return Response(content=data, media_type="image/jpeg")
