@@ -25,9 +25,14 @@ with ng.activate():
     with InferVStreams(ng, ip, op) as vs:
         r = vs.infer({input_name: img})
 
-k = list(r.keys())[0]
-print("shape:", r[k].shape)
-d = r[k][0]
-m = d[:, :, 4] > 0.5
-print("dets>0.5:", m.sum())
-print("sample:", d[m][:3])
+for name, val in r.items():
+    print(f"output: {name}")
+    print(f"  type: {type(val)}")
+    if isinstance(val, np.ndarray):
+        print(f"  shape: {val.shape}")
+        print(f"  sample: {val.flat[:10]}")
+    elif isinstance(val, list):
+        print(f"  len: {len(val)}")
+        for i, item in enumerate(val[:2]):
+            arr = np.array(item) if not isinstance(item, np.ndarray) else item
+            print(f"  [{i}] type={type(item)} shape={arr.shape} sample={arr.flat[:10]}")
