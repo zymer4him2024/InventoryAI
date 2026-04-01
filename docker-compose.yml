@@ -126,7 +126,6 @@ services:
     ipc: host
     group_add:
       - video
-      - render
     environment:
       - APP_ID=${APP_ID}
       - DISPLAY=:0
