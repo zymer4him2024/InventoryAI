@@ -21,8 +21,9 @@ op = OutputVStreamParams.make(ng, format_type=FormatType.FLOAT32)
 img = np.random.rand(1, 640, 640, 3).astype(np.float32)
 input_name = hef.get_input_vstream_infos()[0].name
 
-with InferVStreams(ng, ip, op) as vs:
-    r = vs.infer({input_name: img})
+with ng.activate():
+    with InferVStreams(ng, ip, op) as vs:
+        r = vs.infer({input_name: img})
 
 k = list(r.keys())[0]
 print("shape:", r[k].shape)
