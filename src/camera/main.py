@@ -10,6 +10,8 @@ import time
 
 import cv2
 import numpy as np
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import Response, JSONResponse
 
@@ -38,7 +40,15 @@ def _validate_config() -> None:
 
 _validate_config()
 
-app = FastAPI(title="InventoryAI Camera Agent")
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    t = threading.Thread(target=_capture_loop, daemon=True, name="camera-capture")
+    t.start()
+    logger.info("Camera agent started (simulate=%s)", SIMULATE_CAMERA)
+    yield
+
+
+app = FastAPI(title="InventoryAI Camera Agent", lifespan=_lifespan)
 
 # Invariant: _frame_lock guards _latest_frame. Always acquire before reading or writing _latest_frame.
 _frame_lock = threading.Lock()
@@ -86,12 +96,6 @@ def _capture_loop() -> None:
         with _frame_lock:
             _latest_frame = buf.tobytes()
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    t = threading.Thread(target=_capture_loop, daemon=True, name="camera-capture")
-    t.start()
-    logger.info("Camera agent started (simulate=%s)", SIMULATE_CAMERA)
 
 
 @app.get("/frame")

@@ -10,6 +10,8 @@ import time
 
 import cv2
 import numpy as np
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile
 
 from src.inference.schemas import Detection, InferenceResponse, HealthResponse
@@ -44,7 +46,14 @@ _validate_config()
 _simulation_mode = True
 _hailo_runner = None
 
-app = FastAPI(title="InventoryAI Inference Agent")
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    _try_load_hailo()
+    logger.info("Inference agent started (simulation=%s, labels=%s)", _simulation_mode, MOCK_LABELS)
+    yield
+
+
+app = FastAPI(title="InventoryAI Inference Agent", lifespan=_lifespan)
 
 
 def _try_load_hailo() -> bool:
@@ -128,11 +137,6 @@ def _hailo_inference(image_bytes: bytes) -> InferenceResponse:
     elapsed = (time.perf_counter() - t0) * 1000
     return InferenceResponse(success=True, inference_ms=round(elapsed, 2), detections=detections[:200])
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    _try_load_hailo()
-    logger.info("Inference agent started (simulation=%s, labels=%s)", _simulation_mode, MOCK_LABELS)
 
 
 @app.post("/inference", response_model=InferenceResponse)

@@ -10,6 +10,8 @@ import time
 
 import cv2
 import numpy as np
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import Response, JSONResponse
 
@@ -46,7 +48,15 @@ def _validate_config() -> None:
 
 _validate_config()
 
-app = FastAPI(title="InventoryAI Display Agent")
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    t = threading.Thread(target=_render_loop, daemon=True, name="render-loop")
+    t.start()
+    logger.info("Display agent started (headless=%s)", DISPLAY_HEADLESS)
+    yield
+
+
+app = FastAPI(title="InventoryAI Display Agent", lifespan=_lifespan)
 _state = DisplayState()
 
 # Invariant: _snapshot_lock guards _latest_snapshot. Always acquire before reading or writing.
@@ -93,12 +103,6 @@ def _render_loop() -> None:
             logger.error("Render error: %s", exc)
             time.sleep(1.0)
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    t = threading.Thread(target=_render_loop, daemon=True, name="render-loop")
-    t.start()
-    logger.info("Display agent started (headless=%s)", DISPLAY_HEADLESS)
 
 
 @app.post("/hud", response_model=HUDResponse)

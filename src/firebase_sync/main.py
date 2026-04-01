@@ -8,6 +8,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
@@ -26,7 +28,15 @@ try:
 except ImportError:
     GoogleCloudError = OSError  # type: ignore[misc,assignment]
 
-app = FastAPI(title="InventoryAI Firebase Sync Agent")
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    _init_firebase()
+    EVENTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("Firebase Sync Agent started (simulation=%s)", _simulation)
+    yield
+
+
+app = FastAPI(title="InventoryAI Firebase Sync Agent", lifespan=_lifespan)
 
 _db = None
 _simulation = True
@@ -57,12 +67,6 @@ def _init_firebase() -> bool:
         logger.warning("Firebase init failed (%s) — simulation mode", exc)
         return False
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    _init_firebase()
-    EVENTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("Firebase Sync Agent started (simulation=%s)", _simulation)
 
 
 @app.post("/write", response_model=WriteResponse)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
@@ -33,7 +35,17 @@ _mode: BaseMode = _MODE_MAP[config.APP_ID]()
 # on_inference_result, get_display_state, handle_qr, or get_state.
 _mode_lock = asyncio.Lock()
 
-app = FastAPI(title=f"InventoryAI Gateway ({config.APP_ID})")
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    asyncio.create_task(_inference_loop())
+    asyncio.create_task(_qr_scan_loop())
+    logger.info("Gateway started — APP_ID=%s DEVICE_ID=%s", config.APP_ID, config.DEVICE_ID)
+    yield
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+
+
+app = FastAPI(title=f"InventoryAI Gateway ({config.APP_ID})", lifespan=_lifespan)
 
 _http_client: httpx.AsyncClient | None = None
 
@@ -157,18 +169,6 @@ async def _qr_scan_loop() -> None:
             logger.error("QR scan error: %s", exc)
             await asyncio.sleep(2.0)
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    asyncio.create_task(_inference_loop())
-    asyncio.create_task(_qr_scan_loop())
-    logger.info("Gateway started — APP_ID=%s DEVICE_ID=%s", config.APP_ID, config.DEVICE_ID)
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    if _http_client and not _http_client.is_closed:
-        await _http_client.aclose()
 
 
 @app.post("/job", response_model=JobResponse)
