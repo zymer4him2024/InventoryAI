@@ -41,9 +41,11 @@ jobs:
           python -c "
           import xml.etree.ElementTree as ET
           root = ET.parse('results.xml').getroot()
-          failures = int(root.attrib.get('failures', 0))
-          errors = int(root.attrib.get('errors', 0))
+          suite = root if 'failures' in root.attrib else root.find('testsuite')
+          failures = int(suite.attrib.get('failures', 0))
+          errors = int(suite.attrib.get('errors', 0))
+          total = suite.attrib.get('tests', '?')
           if failures or errors:
               raise SystemExit(f'{failures} failures, {errors} errors')
-          print(f'All {root.attrib[\"tests\"]} tests passed')
+          print(f'All {total} tests passed')
           "
