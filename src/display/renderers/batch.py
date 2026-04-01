@@ -1,8 +1,6 @@
-"""Renderer for batch_count mode — camera feed + detection boxes + count overlay."""
+"""Renderer for batch_count mode — detection boxes + count overlay."""
 
 from __future__ import annotations
-
-import base64
 
 import cv2
 import numpy as np
@@ -14,23 +12,10 @@ C_GREEN = (0, 200, 0)
 C_RED = (0, 0, 220)
 C_YELLOW = (0, 220, 220)
 C_GRAY = (120, 120, 120)
-C_BG = (30, 30, 30)
 
 
 def render(canvas: np.ndarray, hud: HUDUpdate) -> np.ndarray:
     h, w = canvas.shape[:2]
-
-    # Decode camera frame as background
-    if hud.frame_b64:
-        raw = base64.b64decode(hud.frame_b64)
-        nparr = np.frombuffer(raw, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if frame is not None:
-            canvas = cv2.resize(frame, (w, h))
-        else:
-            canvas[:] = C_BG
-    else:
-        canvas[:] = C_BG
 
     # Draw detection bounding boxes
     if hud.detections:

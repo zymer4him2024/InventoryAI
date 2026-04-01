@@ -82,13 +82,15 @@ echo ""
 echo "  Auto-refresh HUD: http://localhost:8003/snapshot (refresh to see updates)"
 echo ""
 
-# Open browser
-if command -v open &>/dev/null; then
-    open "http://localhost:8003/snapshot"
-    open "http://localhost:${GATEWAY_PORT}/status"
-elif command -v xdg-open &>/dev/null; then
-    xdg-open "http://localhost:8003/snapshot"
-    xdg-open "http://localhost:${GATEWAY_PORT}/status"
+# Open browser (skip if DISPLAY_HEADLESS is false — fullscreen OpenCV is primary)
+if [ "${DISPLAY_HEADLESS}" = "true" ]; then
+    if command -v open &>/dev/null; then
+        open "http://localhost:8003/snapshot"
+        open "http://localhost:${GATEWAY_PORT}/status"
+    elif command -v xdg-open &>/dev/null; then
+        xdg-open "http://localhost:8003/snapshot"
+        xdg-open "http://localhost:${GATEWAY_PORT}/status"
+    fi
 fi
 
 echo "Press Ctrl+C to stop all agents."

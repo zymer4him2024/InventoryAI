@@ -9,6 +9,7 @@ import threading
 import time
 
 import cv2
+import httpx
 import numpy as np
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ DISPLAY_HEIGHT = int(os.getenv("DISPLAY_HEIGHT", "1080"))
 DISPLAY_FPS = int(os.getenv("DISPLAY_FPS", "15"))
 DISPLAY_HEADLESS = os.getenv("DISPLAY_HEADLESS", "false").lower() == "true"
 APP_ID = os.getenv("APP_ID", "batch_count")
+CAMERA_URL = os.getenv("CAMERA_URL", "http://localhost:8002")
 
 _VALID_APP_IDS = {"batch_count", "bundle_check", "area_monitor"}
 
@@ -71,6 +73,25 @@ def _render_loop() -> None:
     canvas = np.zeros((DISPLAY_HEIGHT, DISPLAY_WIDTH, 3), dtype=np.uint8)
     renderer = _RENDERERS.get(APP_ID, batch.render)
     interval = 1.0 / DISPLAY_FPS
+    # _latest_frame_lock guards _latest_frame — camera frame for rendering
+    _latest_frame_lock = threading.Lock()
+    _latest_frame = [None]  # mutable container for closure
+
+    # Background thread: pull frames from camera agent
+    def _frame_puller() -> None:
+        client = httpx.Client(timeout=2.0)
+        while True:
+            try:
+                resp = client.get(f"{CAMERA_URL}/frame")
+                if resp.status_code == 200:
+                    with _latest_frame_lock:
+                        _latest_frame[0] = resp.content
+            except httpx.RequestError:
+                pass
+            time.sleep(interval)
+
+    puller = threading.Thread(target=_frame_puller, daemon=True, name="frame-puller")
+    puller.start()
 
     if not DISPLAY_HEADLESS:
         cv2.namedWindow("InventoryAI", cv2.WINDOW_NORMAL)
@@ -82,6 +103,20 @@ def _render_loop() -> None:
         try:
             t0 = time.monotonic()
             hud = _state.snapshot()
+
+            # Decode latest camera frame as background
+            with _latest_frame_lock:
+                frame_bytes = _latest_frame[0]
+            if frame_bytes:
+                nparr = np.frombuffer(frame_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if frame is not None:
+                    canvas = cv2.resize(frame, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
+                else:
+                    canvas[:] = (30, 30, 30)
+            else:
+                canvas[:] = (30, 30, 30)
+
             canvas = renderer(canvas, hud)
 
             _, buf = cv2.imencode(".jpg", canvas, [cv2.IMWRITE_JPEG_QUALITY, 85])

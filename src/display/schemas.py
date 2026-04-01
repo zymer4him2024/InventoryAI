@@ -26,7 +26,6 @@ class HealthResponse(BaseModel):
 class HUDUpdate(BaseModel):
     app_id: str = ""
     state: str = ""
-    frame_b64: Optional[str] = None  # Base64-encoded JPEG camera frame
     detections: Optional[List[DetectionBox]] = None  # Bounding boxes to overlay
     # batch_count fields
     live_count: Optional[int] = None
