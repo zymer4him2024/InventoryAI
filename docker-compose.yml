@@ -138,8 +138,6 @@ services:
       - ./src:/app/src:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/app/.Xauthority:ro
-      # Mount host python3-opencv (GTK3 highgui) — container's python:3.11-slim has no GUI opencv
-      - /usr/lib/python3/dist-packages/cv2.cpython-311-aarch64-linux-gnu.so:/usr/local/lib/python3.11/site-packages/cv2.cpython-311-aarch64-linux-gnu.so:ro
     devices:
       - /dev/dri:/dev/dri
     mem_limit: "512m"
