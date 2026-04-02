@@ -164,6 +164,7 @@ services:
       - APP_ID=${APP_ID}
       - DEVICE_ID=${DEVICE_ID}
       - FIREBASE_SIMULATE=${FIREBASE_SIMULATE:-false}
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-credentials.json
       - EVENTS_LOG_PATH=/app/data/events.jsonl
     volumes:
       - ./data:/app/data:rw

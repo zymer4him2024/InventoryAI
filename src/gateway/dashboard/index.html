@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InventoryAI Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>InventoryAI</h1>
+    <span id="connection-status" class="badge badge-gray">Connecting...</span>
+  </header>
+
+  <section id="status-card">
+    <div class="card">
+      <div class="card-header">
+        <h2>Device Status</h2>
+        <span id="device-id" class="badge badge-gray">--</span>
+      </div>
+      <div class="status-row">
+        <div class="status-item">
+          <label>Mode</label>
+          <span id="app-id">--</span>
+        </div>
+        <div class="status-item">
+          <label>State</label>
+          <span id="device-state" class="state-pill">--</span>
+        </div>
+        <div class="status-item" id="detail-container">
+          <label>Details</label>
+          <span id="device-detail">--</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="events-section">
+    <div class="card">
+      <div class="card-header">
+        <h2>Event History</h2>
+        <span id="event-count" class="badge badge-gray">0 events</span>
+      </div>
+      <div class="table-wrapper">
+        <table id="events-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>SKU / Location</th>
+              <th>Result</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="events-body">
+            <tr><td colspan="5" class="empty-msg">Waiting for events...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

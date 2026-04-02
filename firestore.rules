@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Dashboard can read events and SKUs — writes only via Admin SDK (server-side)
+    match /inventory_batch_events/{doc} { allow read; allow write: if false; }
+    match /inventory_bundle_events/{doc} { allow read; allow write: if false; }
+    match /inventory_area_snapshots/{doc} { allow read; allow write: if false; }
+    match /inventory_skus/{doc} { allow read; allow write: if false; }
+  }
+}

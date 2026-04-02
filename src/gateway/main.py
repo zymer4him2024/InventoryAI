@@ -7,7 +7,11 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.gateway import config
 from src.gateway.loops import inference_loop, qr_scan_loop
@@ -31,6 +35,11 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=f"InventoryAI Gateway ({config.APP_ID})", lifespan=_lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"])
+
+_DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+if _DASHBOARD_DIR.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
 
 
 @app.post("/job", response_model=JobResponse)
