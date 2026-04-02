@@ -124,7 +124,10 @@ def _render_loop() -> None:
 
             if not DISPLAY_HEADLESS:
                 cv2.imshow("InventoryAI", canvas)
-                cv2.waitKey(1)
+                key = cv2.waitKey(1) & 0xFF
+                if key == 27:  # ESC
+                    cv2.destroyAllWindows()
+                    break
 
             elapsed = time.monotonic() - t0
             if elapsed < interval:

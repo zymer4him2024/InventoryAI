@@ -198,7 +198,8 @@ while True:
     draw_status_bar(frame, fps_display, inf_ms, len(detections))
 
     cv2.imshow("InventoryAI Live", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord("q") or key == 27:  # q or ESC
         break
 
 cap.release()
