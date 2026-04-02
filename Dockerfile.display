@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl libgl1 libglib2.0-0 libgtk-3-0 \
-    python3-opencv \
     libx11-6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -12,9 +11,6 @@ RUN groupadd -r appgroup --gid=1001 \
 WORKDIR /app
 COPY requirements.display.txt .
 RUN pip install --no-cache-dir -r requirements.display.txt
-
-# Symlink system python3-opencv (with GTK3 highgui) into pip site-packages
-RUN ln -s /usr/lib/python3/dist-packages/cv2 /usr/local/lib/python3.11/site-packages/cv2
 
 COPY src/ /app/src/
 
