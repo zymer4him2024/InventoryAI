@@ -19,7 +19,7 @@ services:
       - DEVICE_ID=${DEVICE_ID}
       - CAMERA_URL=http://camera_agent:8002
       - INFERENCE_URL=http://inference_agent:8001
-      - DISPLAY_URL=http://display_agent:8003
+      - DISPLAY_URL=http://172.30.0.1:8003
       - FIREBASE_SYNC_URL=http://firebase_sync_agent:8004
     volumes:
       - ./src:/app/src:ro
@@ -118,12 +118,9 @@ services:
     user: "1001:1001"
     restart: unless-stopped
     command: python -m src.display.main
-    expose:
-      - "8003"
-    networks:
-      inventory_bridge:
-        ipv4_address: 172.30.0.13
-    ipc: host
+    # Host network required: Qt xcb uses abstract X11 sockets which are
+    # scoped to the network namespace. Bridge networking isolates them.
+    network_mode: host
     group_add:
       - video
     environment:
@@ -133,7 +130,7 @@ services:
       - DISPLAY_WIDTH=1920
       - DISPLAY_HEIGHT=1080
       - DISPLAY_HEADLESS=false
-      - CAMERA_URL=http://camera_agent:8002
+      - CAMERA_URL=http://172.30.0.12:8002
     volumes:
       - ./src:/app/src:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
